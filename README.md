@@ -117,7 +117,7 @@ And:
 
 # 🔒 6. Team Rules
 
-❗ Avoid two people editing the same scene
+❗ Avoid two people editing the scene at a time
 - ✔️ Use prefabs for shared objects
 - ✔️ Pull before starting work
 - ✔️ Test before pushing
