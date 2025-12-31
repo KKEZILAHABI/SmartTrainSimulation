@@ -1,11 +1,11 @@
 function unity_control()
-    % UNITY_CONTROL MATLAB client for controlling Unity and receiving video frames
+    % UNITY_CONTROL_OPTIMIZED - Low-latency MATLAB client for Unity control
     %
-    % This function connects to Unity TCP servers for command sending (port 5000)
-    % and frame receiving (port 5001). Use WASD or arrow keys to control the
-    % Unity character and view the camera feed in real-time.
+    % Optimizations:
+    % - Memory-based JPEG decoding (no temp files)
+    % - Aggressive frame skipping
+    % - Non-blocking frame reception
     
-    % Clear any existing connections
     try
         clear all;
         close all;
@@ -13,53 +13,56 @@ function unity_control()
     catch
     end
     
-    disp('=== MATLAB Unity Controller ===');
+    disp('=== MATLAB Train Simulation===');
     disp('Initializing connection to Unity...');
     
     % Connect to Unity TCP servers
     try
         commandClient = tcpclient('127.0.0.1', 5000, 'Timeout', 5);
         frameClient = tcpclient('127.0.0.1', 5001, 'Timeout', 5);
+        
+        % OPTIMIZATION: Configure TCP for low latency
+        configureCallback(frameClient, "off");  % Disable callbacks for manual control
+        
         disp('Connected to Unity servers.');
         disp('  Command port: 5000');
-        disp('  Frame port: 5001');
+        disp('  Output port: 5001');
     catch e
-        error('Failed to connect to Unity. Ensure Unity is running and TCPReceiver is active.\nError: %s', e.message);
+        error('Failed to connect to Unity. Ensure Unity is running.\nError: %s', e.message);
     end
     
-    % Create figure for display and key presses
+    % Create figure
     fig = figure('Position', [100, 100, 700, 550], ...
                  'KeyPressFcn', @keyDown, ...
                  'KeyReleaseFcn', @keyUp, ...
-                 'Name', 'Unity Control - MATLAB Client', ...
+                 'Name', 'Unity Control - OPTIMIZED', ...
                  'NumberTitle', 'off', ...
                  'MenuBar', 'none', ...
                  'ToolBar', 'none', ...
                  'Resize', 'off');
     
-    % Create axes for video display
+    % Create axes
     ax = axes('Parent', fig, ...
               'Position', [0.05, 0.05, 0.9, 0.8], ...
               'XTick', [], 'YTick', [], ...
-              'Box', 'on', ...
-              'XColor', [0.3 0.3 0.3], ...
-              'YColor', [0.3 0.3 0.3]);
-    xlabel(ax, 'Unity Camera Feed', 'FontSize', 12, 'FontWeight', 'bold');
+              'Box', 'on');
     
     % Status text
     statusText = uicontrol('Style', 'text', ...
                            'Parent', fig, ...
                            'Position', [10, 490, 680, 50], ...
-                           'String', 'Status: Connected to Unity. Click here, then use WASD/Arrow keys.', ...
+                           'String', 'Status: Connected. Use WASD/Arrow keys.', ...
                            'FontSize', 10, ...
                            'HorizontalAlignment', 'center', ...
-                           'BackgroundColor', [0.9 0.9 0.9]);
+                           'BackgroundColor', [0 0 0]);
     
     imgHandle = [];
     lastKey = '';
     isRunning = true;
     frameCount = 0;
+    skippedFrames = 0;
     startTime = tic;
+    lastFrameTime = tic;
     
     % Display initial message
     text(ax, 0.5, 0.5, 'Waiting for Unity frames...', ...
@@ -75,32 +78,25 @@ function unity_control()
         key = event.Key;
         lastKey = key;
         
-        % Update status
         set(statusText, 'String', sprintf('Status: Key pressed: %s', key), ...
-                        'BackgroundColor', [0.8 0.9 0.8]);
+                        'BackgroundColor', [0 0 0]);
         
         try
             switch key
                 case {'w', 'uparrow'}
                     write(commandClient, uint8('W'));
-                    disp('Command: Forward (W)');
                 case {'a', 'leftarrow'}
                     write(commandClient, uint8('A'));
-                    disp('Command: Left (A)');
                 case {'s', 'downarrow'}
                     write(commandClient, uint8('S'));
-                    disp('Command: Back (S)');
                 case {'d', 'rightarrow'}
                     write(commandClient, uint8('D'));
-                    disp('Command: Right (D)');
                 otherwise
-                    set(statusText, 'String', sprintf('Status: Key %s ignored (use WASD/arrows)', key), ...
-                                    'BackgroundColor', [0.95 0.95 0.7]);
+                    set(statusText, 'String', sprintf('Status: Key %s ignored', key), ...
+                                    'BackgroundColor', [0 0 0]);
             end
         catch e
             disp(['Error sending command: ' e.message]);
-            set(statusText, 'String', 'Status: Error sending command', ...
-                            'BackgroundColor', [1 0.8 0.8]);
         end
     end
     
@@ -109,88 +105,108 @@ function unity_control()
         if ~isempty(lastKey)
             try
                 write(commandClient, uint8('STOP'));
-                disp('Command: STOP');
             catch e
                 disp(['Error sending STOP: ' e.message]);
             end
             lastKey = '';
         end
         
-        % Update status
-        set(statusText, 'String', 'Status: Ready - Use WASD/Arrow keys to control', ...
-                        'BackgroundColor', [0.9 0.9 0.9]);
+        set(statusText, 'String', 'Status: Ready - Use WASD/Arrow keys', ...
+                        'BackgroundColor', [0 0 0]);
     end
     
     % Close callback
     function closeRequest(~, ~)
         isRunning = false;
-        set(statusText, 'String', 'Status: Shutting down...', ...
-                        'BackgroundColor', [0.95 0.8 0.8]);
         
-        % Send final STOP command
         try
             write(commandClient, uint8('STOP'));
         catch
         end
         
-        % Close connections
         try
             clear commandClient frameClient;
         catch
         end
         
-        % Calculate statistics
+        delete(fig);
+        
+        % Display statistics
         elapsedTime = toc(startTime);
-        if elapsedTime > 0
-            fps = frameCount / elapsedTime;
-            %fprintf('\n=== Session Statistics ===\n');
-            %fprintf('Total frames received: %d\n', frameCount);
-            %fprintf('Total time: %.2f seconds\n', elapsedTime);
-            %fprintf('Average FPS: %.2f\n', fps);
+        if elapsedTime > 0 && frameCount > 0
+           fprintf('\n=== Session Ended ===\n');
+           % fprintf('Total frames received: %d\n', frameCount);
+            %fprintf('Frames skipped: %d\n', skippedFrames);
+            %%fprintf('Session duration: %.2f seconds\n', elapsedTime);
+            %fprintf('Average FPS: %.2f\n', frameCount / elapsedTime);
+            fprintf('========================\n');
         end
         
-        delete(fig);
         disp('Unity control stopped.');
     end
     
     set(fig, 'CloseRequestFcn', @closeRequest);
     
-    % Display control instructions
+    % Display instructions
     fprintf('\n=== Control Instructions ===\n');
-    fprintf('W / Up Arrow    : Move forward (camera view)\n');
-    fprintf('A / Left Arrow  : Move left\n');
-    fprintf('S / Down Arrow  : Move backward\n');
-    fprintf('D / Right Arrow : Move right\n');
-    fprintf('Release any key : Stop movement\n');
-    fprintf('Close window    : Exit program\n');
+    fprintf('W / Up    : Forward\n');
+    fprintf('A / Left  : Left\n');
+    fprintf('S / Down  : Backward\n');
+    fprintf('D / Right : Right\n');
     fprintf('============================\n\n');
     
-    disp('MATLAB Unity Controller Ready.');
-    disp('Click the figure window, then use WASD or arrow keys to control.');
+    disp('Ready. Click window and use WASD/arrows.');
     
-    % Main loop - receive and display frames
-    lastFrameTime = tic;
-    connectionRetries = 0;
-    maxRetries = 5;
+    % OPTIMIZATION: Pre-allocate buffer for frame size reading
+    frameSizeBuffer = zeros(1, 4, 'uint8');
     
+    % Main loop - OPTIMIZED for low latency
     while isRunning && isvalid(fig)
         try
-            % Check if data is available
-            if frameClient.NumBytesAvailable >= 4
-                % Read frame size (4 bytes)
+            % OPTIMIZATION: Skip frames if we're behind
+            % Only process the latest available frame
+            availableBytes = frameClient.NumBytesAvailable;
+            
+            if availableBytes >= 4
+                % Quick check: how many frames are waiting?
+                numFramesWaiting = 0;
+                tempAvailable = availableBytes;
+                
+                % Try to estimate number of complete frames in buffer
+                while tempAvailable >= 4
+                    % We can't peek without reading, so just process what we have
+                    break;
+                end
+                
+                % Read frame size
                 frameSizeBytes = read(frameClient, 4, 'uint8');
                 frameSize = typecast(uint8(frameSizeBytes), 'int32');
                 
-                % Validate frame size
-                if frameSize <= 0 || frameSize > 10e6 % 10 MB max
-                    disp(['Invalid frame size: ' num2str(frameSize) ' bytes']);
+                % Validate
+                if frameSize <= 0 || frameSize > 10e6
+                    disp(['Invalid frame size: ' num2str(frameSize)]);
+                    % Try to clear buffer
+                    if frameClient.NumBytesAvailable > 0
+                        flush(frameClient);
+                    end
                     continue;
                 end
                 
-                % Wait for full frame to arrive with timeout
+                % OPTIMIZATION: Check if there are more frames waiting
+                % If so, skip this one and go to the next
+                if frameClient.NumBytesAvailable > frameSize + 4
+                    % Another frame is already waiting, skip this old one
+                    if frameClient.NumBytesAvailable >= frameSize
+                        discard = read(frameClient, frameSize, 'uint8'); %#ok<NASGU>
+                        skippedFrames = skippedFrames + 1;
+                        continue;  % Go to next frame immediately
+                    end
+                end
+                
+                % Wait for this frame with timeout
                 timeout = tic;
                 while frameClient.NumBytesAvailable < frameSize && isRunning
-                    if toc(timeout) > 2.0 % 2 second timeout
+                    if toc(timeout) > 1.0  % 1 second timeout
                         error('Frame reception timeout');
                     end
                     pause(0.001);
@@ -200,89 +216,80 @@ function unity_control()
                     % Read frame data
                     frameData = read(frameClient, frameSize, 'uint8');
                     
-                    % Decode JPEG
+                    % OPTIMIZATION: Decode JPEG in memory (no temp file)
                     try
-                        % Decode JPEG from bytes
-                        tempFile = tempname;
-                        fid = fopen(tempFile, 'wb');
-                        fwrite(fid, frameData, 'uint8');
-                        fclose(fid);
+                        % Create Java ByteArrayInputStream for in-memory decoding
+                        javaBytes = typecast(frameData, 'int8');
+                        byteStream = java.io.ByteArrayInputStream(javaBytes);
+                        img = javax.imageio.ImageIO.read(byteStream);
                         
-                        img = imread(tempFile);
-                        delete(tempFile);
-                        
-                        % Resize to standard dimensions
-                        img = imresize(img, [480, 640]);
-                        
-                        % Display image
-                        if isempty(imgHandle) || ~isvalid(imgHandle)
-                            imgHandle = imshow(img, 'Parent', ax);
-                            axis(ax, 'off');
-                            title(ax, 'Unity Camera Feed', 'FontSize', 12);
-                        else
-                            set(imgHandle, 'CData', img);
+                        if ~isempty(img)
+                            % Convert Java BufferedImage to MATLAB matrix
+                            h = img.getHeight();
+                            w = img.getWidth();
+                            
+                            % Get pixel data
+                            pixelData = reshape(typecast(img.getData().getDataStorage(), 'uint8'), [3, w, h]);
+                            img_matlab = permute(pixelData, [3 2 1]);
+                            
+                            % Display
+                            if isempty(imgHandle) || ~isvalid(imgHandle)
+                                imgHandle = imshow(img_matlab, 'Parent', ax);
+                                axis(ax, 'off');
+                                title(ax, 'Smart Train Simulation', 'FontSize', 12);
+                            else
+                                set(imgHandle, 'CData', img_matlab);
+                            end
+                            
+                            % Update stats
+                            frameCount = frameCount + 1;
+                            frameTime = toc(lastFrameTime);
+                            lastFrameTime = tic;
+                            
+                            %if frameCount > 1
+                                %currentFPS = 1 / frameTime;
+                                %latencyMs = frameTime * 1000;
+                                %set(statusText, 'String', sprintf('Frames: %d | Skipped: %d | FPS: %.1f | Latency: %.0fms', ...
+                                  %  frameCount, skippedFrames, currentFPS, latencyMs), ...
+                                   % 'BackgroundColor', [0.9 0.95 0.95]);
+                            %end
+                            
+                            drawnow limitrate;
                         end
-                        
-                        % Update frame count and status
-                        frameCount = frameCount + 1;
-                        frameTime = toc(lastFrameTime);
-                        lastFrameTime = tic;
-                        
-                        if frameCount > 1
-                            currentFPS = 1 / frameTime;
-                            set(statusText, 'String', sprintf('Status: %d frames received | FPS: %.1f | Use WASD/Arrows', ...
-                                frameCount, currentFPS), ...
-                                'BackgroundColor', [0.9 0.95 0.95]);
-                        end
-                        
-                        drawnow limitrate;
                         
                     catch imgErr
-                        disp(['Image decode error: ' imgErr.message]);
-                        
-                        % Show placeholder image on error
-                        if isempty(imgHandle) || ~isvalid(imgHandle)
-                            placeholder = zeros(480, 640, 3, 'uint8');
-                            imgHandle = imshow(placeholder, 'Parent', ax);
-                            axis(ax, 'off');
+                        % Fallback to file-based decoding if Java method fails
+                        try
+                            tempFile = [tempname '.jpg'];
+                            fid = fopen(tempFile, 'wb');
+                            fwrite(fid, frameData, 'uint8');
+                            fclose(fid);
+                            
+                            img = imread(tempFile);
+                            delete(tempFile);
+                            
+                            if isempty(imgHandle) || ~isvalid(imgHandle)
+                                imgHandle = imshow(img, 'Parent', ax);
+                                axis(ax, 'off');
+                            else
+                                set(imgHandle, 'CData', img);
+                            end
+                            
+                            frameCount = frameCount + 1;
+                            drawnow limitrate;
+                        catch
+                            disp(['Image decode error: ' imgErr.message]);
                         end
                     end
                 end
             else
-                % No data available, brief pause
-                pause(0.01);
+                % No data, brief pause
+                pause(0.005);  % Shorter pause for more responsiveness
             end
-            
-            connectionRetries = 0; % Reset retry counter on successful iteration
             
         catch e
             if isRunning
                 disp(['Frame error: ' e.message]);
-                
-                % Try to reconnect if connection was lost
-                connectionRetries = connectionRetries + 1;
-                
-                if connectionRetries <= maxRetries
-                    set(statusText, 'String', sprintf('Status: Reconnecting... (Attempt %d/%d)', ...
-                        connectionRetries, maxRetries), ...
-                        'BackgroundColor', [1 0.9 0.7]);
-                    
-                    try
-                        % Close and recreate frame client
-                        clear frameClient;
-                        pause(1); % Wait before reconnecting
-                        frameClient = tcpclient('127.0.0.1', 5001, 'Timeout', 5);
-                        disp('Reconnected to Unity frame server');
-                        set(statusText, 'String', 'Status: Reconnected - Ready', ...
-                            'BackgroundColor', [0.9 0.9 0.9]);
-                    catch reconnectErr
-                        disp(['Reconnect failed: ' reconnectErr.message]);
-                    end
-                else
-                    set(statusText, 'String', 'Status: Max reconnection attempts reached', ...
-                        'BackgroundColor', [1 0.8 0.8]);
-                    pause(0.5);
-                end
                 pause(0.1);
             end
         end
@@ -294,24 +301,5 @@ function unity_control()
     catch
     end
     
-    % Clean up any temporary files
-    tempFiles = dir([tempdir '*.jpg']);
-    for i = 1:min(10, length(tempFiles)) % Clean up at most 10 temp files
-        try
-            delete(fullfile(tempdir, tempFiles(i).name));
-        catch
-        end
-    end
-    
     disp('Unity control session ended.');
-    
-    % Display final statistics if we have data
-    elapsedTime = toc(startTime);
-    if elapsedTime > 0 && frameCount > 0
-        fprintf('\n=== Final Statistics ===\n');
-        fprintf('Total frames received: %d\n', frameCount);
-        fprintf('Session duration: %.2f seconds\n', elapsedTime);
-        fprintf('Average FPS: %.2f\n', frameCount / elapsedTime);
-        fprintf('========================\n');
-    end
 end

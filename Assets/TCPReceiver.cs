@@ -24,33 +24,32 @@ public class TCPReceiver : MonoBehaviour
     public float speed = 5f;
     CharacterController controller;
     
-    // Frame streaming
+    // Frame streaming - OPTIMIZED
     RenderTexture renderTexture;
     Texture2D screenCapture;
     public int frameWidth = 640;
     public int frameHeight = 480;
-    public int targetFPS = 30;
+    public int targetFPS = 60;
+    public int jpegQuality = 100;  // REDUCED quality for faster encoding
     float frameInterval;
     float lastFrameTime;
     
     TcpClient frameClient;
     NetworkStream frameStream;
     bool isFrameClientConnected = false;
-    Queue<byte[]> frameQueue = new Queue<byte[]>();
-    object queueLock = new object();
     
-    // For temporary rendering
-    bool isRenderingToTexture = false;
+    // OPTIMIZATION: Only keep the latest frame
+    byte[] latestFrame = null;
+    object frameLock = new object();
+    bool hasNewFrame = false;
 
     void Start()
     {
         controller = GetComponent<CharacterController>();
         
-        // Setup camera - IMPORTANT: Don't assign targetTexture yet
         if (renderCamera == null)
             renderCamera = Camera.main;
         
-        // Check if camera exists
         if (renderCamera == null)
         {
             Debug.LogError("No camera found! Ensure there's an active camera with MainCamera tag.");
@@ -72,12 +71,10 @@ public class TCPReceiver : MonoBehaviour
 
     void StartServers()
     {
-        // Start command receiver thread
         receiveThread = new Thread(new ThreadStart(ListenForCommands));
         receiveThread.IsBackground = true;
         receiveThread.Start();
         
-        // Start frame sender thread
         sendThread = new Thread(new ThreadStart(SendFrames));
         sendThread.IsBackground = true;
         sendThread.Start();
@@ -95,13 +92,18 @@ public class TCPReceiver : MonoBehaviour
             while (true)
             {
                 using (TcpClient client = commandListener.AcceptTcpClient())
-                using (NetworkStream stream = client.GetStream())
                 {
-                    int length;
-                    while ((length = stream.Read(bytes, 0, bytes.Length)) != 0)
+                    // OPTIMIZATION: Disable Nagle's algorithm for lower latency
+                    client.NoDelay = true;
+                    
+                    using (NetworkStream stream = client.GetStream())
                     {
-                        receivedData = Encoding.ASCII.GetString(bytes, 0, length);
-                        newData = true;
+                        int length;
+                        while ((length = stream.Read(bytes, 0, bytes.Length)) != 0)
+                        {
+                            receivedData = Encoding.ASCII.GetString(bytes, 0, length);
+                            newData = true;
+                        }
                     }
                 }
             }
@@ -123,6 +125,11 @@ public class TCPReceiver : MonoBehaviour
             while (true)
             {
                 frameClient = frameListener.AcceptTcpClient();
+                
+                // OPTIMIZATION: Configure TCP for low latency
+                frameClient.NoDelay = true;  // Disable Nagle's algorithm
+                frameClient.SendBufferSize = 65536;  // Smaller send buffer
+                
                 frameStream = frameClient.GetStream();
                 isFrameClientConnected = true;
                 Debug.Log("MATLAB connected for frame streaming");
@@ -132,11 +139,14 @@ public class TCPReceiver : MonoBehaviour
                     while (frameClient.Connected && isFrameClientConnected)
                     {
                         byte[] frameData = null;
-                        lock (queueLock)
+                        
+                        // OPTIMIZATION: Only get the latest frame, skip old ones
+                        lock (frameLock)
                         {
-                            if (frameQueue.Count > 0)
+                            if (hasNewFrame)
                             {
-                                frameData = frameQueue.Dequeue();
+                                frameData = latestFrame;
+                                hasNewFrame = false;
                             }
                         }
                         
@@ -152,7 +162,7 @@ public class TCPReceiver : MonoBehaviour
                         }
                         else
                         {
-                            Thread.Sleep(10);
+                            Thread.Sleep(5);  // Shorter sleep for more responsive updates
                         }
                     }
                 }
@@ -176,17 +186,15 @@ public class TCPReceiver : MonoBehaviour
 
     void Update()
     {
-        // Handle commands
         if (newData)
         {
             ParseCommand(receivedData);
             newData = false;
         }
         
-        // Apply movement
         controller.Move(moveInput * speed * Time.deltaTime);
         
-        // Capture and queue frames
+        // Capture frames at target FPS
         if (Time.time - lastFrameTime >= frameInterval)
         {
             CaptureFrame();
@@ -200,34 +208,27 @@ public class TCPReceiver : MonoBehaviour
         
         try
         {
-            // Method 2: Render camera to temporary texture without affecting display
             RenderTexture currentTarget = renderCamera.targetTexture;
             RenderTexture currentActive = RenderTexture.active;
             
-            // Temporarily set target texture
             renderCamera.targetTexture = renderTexture;
-            renderCamera.Render(); // Force render to texture
+            renderCamera.Render();
             
-            // Read from the render texture
             RenderTexture.active = renderTexture;
             screenCapture.ReadPixels(new Rect(0, 0, frameWidth, frameHeight), 0, 0);
             screenCapture.Apply();
             
-            // Restore camera settings
             renderCamera.targetTexture = currentTarget;
             RenderTexture.active = currentActive;
             
-            // Encode as JPEG
-            byte[] jpegData = screenCapture.EncodeToJPG(75);
+            // OPTIMIZATION: Lower JPEG quality for faster encoding
+            byte[] jpegData = screenCapture.EncodeToJPG(jpegQuality);
             
-            lock (queueLock)
+            // OPTIMIZATION: Always replace with latest frame (drop old frames)
+            lock (frameLock)
             {
-                frameQueue.Enqueue(jpegData);
-                // Keep queue size manageable
-                while (frameQueue.Count > 5)
-                {
-                    frameQueue.Dequeue();
-                }
+                latestFrame = jpegData;
+                hasNewFrame = true;
             }
         }
         catch (System.Exception e)
@@ -238,22 +239,19 @@ public class TCPReceiver : MonoBehaviour
 
     void ParseCommand(string command)
     {
-        // Expected format: "W", "A", "S", "D", "STOP"
-        // Camera View is rotated 90 degrees clockwise(-90) in relation to the character orientation
-        // (Camera is facing character's right side), hence WASD control are -90 degrees rotated
         switch (command.Trim())
         {
             case "W":
-                moveInput = Vector3.right; // moves character right, moving camera forward
+                moveInput = Vector3.right;
                 break;
             case "A":
-                moveInput = Vector3.forward; // moves character forward, camera moves left
+                moveInput = Vector3.forward;
                 break;
             case "S":
-                moveInput = Vector3.left; // moves character left, moves camera back
+                moveInput = Vector3.left;
                 break;
             case "D":
-                moveInput = Vector3.back; // moves character back, moving camera right
+                moveInput = Vector3.back;
                 break;
             case "STOP":
                 moveInput = Vector3.zero;
@@ -265,7 +263,6 @@ public class TCPReceiver : MonoBehaviour
     {
         isFrameClientConnected = false;
         
-        // Restore camera target texture if needed
         if (renderCamera != null)
         {
             renderCamera.targetTexture = null;
