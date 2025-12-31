@@ -540,15 +540,15 @@ PrefabInstance:
       objectReference: {fileID: 2100000, guid: b90f271b0055abb408f67b0a2eafc916, type: 2}
     - target: {fileID: -8679921383154817045, guid: 1f97c43db5dd2d146a95b9e221ca8edc, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0
+      value: 0.02
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1f97c43db5dd2d146a95b9e221ca8edc, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0
+      value: 0.83
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1f97c43db5dd2d146a95b9e221ca8edc, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0
+      value: -0.01
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1f97c43db5dd2d146a95b9e221ca8edc, type: 3}
       propertyPath: m_LocalRotation.w
@@ -1784,7 +1784,7 @@ Transform:
   m_GameObject: {fileID: 1453063184}
   serializedVersion: 2
   m_LocalRotation: {x: -0.08164596, y: -0.6861418, z: 0.035753086, w: -0.7219869}
-  m_LocalPosition: {x: 2.81, y: 0.4, z: -1.34}
+  m_LocalPosition: {x: 2.917, y: 0.996, z: -1.483}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1862,7 +1862,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   speed: 6
-  mouseSensitivity: 100
+  fixedHeight: 2
 --- !u!114 &1453063190
 MonoBehaviour:
   m_ObjectHideFlags: 0
