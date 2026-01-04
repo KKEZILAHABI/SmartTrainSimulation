@@ -1,11 +1,5 @@
-function unity_control()
-    % UNITY_CONTROL_OPTIMIZED - Low-latency MATLAB client for Unity control
-    %
-    % Optimizations:
-    % - Memory-based JPEG decoding (no temp files)
-    % - Aggressive frame skipping
-    % - Non-blocking frame reception
-    
+function sim_control()
+ 
     try
         clear all;
         close all;
@@ -14,7 +8,7 @@ function unity_control()
     end
     
     disp('=== MATLAB Train Simulation===');
-    disp('Initializing connection to Unity...');
+    disp('Initializing simulation environment...');
     
     % Connect to Unity TCP servers
     try
@@ -22,20 +16,20 @@ function unity_control()
         frameClient = tcpclient('127.0.0.1', 5001, 'Timeout', 5);
         
         % OPTIMIZATION: Configure TCP for low latency
-        configureCallback(frameClient, "off");  % Disable callbacks for manual control
+        configureCallback(frameClient, "off");
         
-        disp('Connected to Unity servers.');
+        disp('Connected to Simulation servers.');
         disp('  Command port: 5000');
         disp('  Output port: 5001');
     catch e
-        error('Failed to connect to Unity. Ensure Unity is running.\nError: %s', e.message);
+        error('Failed to connect to Simulation Server. Ensure Unity is running.\nError: %s', e.message);
     end
     
     % Create figure
     fig = figure('Position', [100, 100, 700, 550], ...
                  'KeyPressFcn', @keyDown, ...
                  'KeyReleaseFcn', @keyUp, ...
-                 'Name', 'Unity Control - OPTIMIZED', ...
+                 'Name', 'Smart Train Simulation', ...
                  'NumberTitle', 'off', ...
                  'MenuBar', 'none', ...
                  'ToolBar', 'none', ...
@@ -51,7 +45,7 @@ function unity_control()
     statusText = uicontrol('Style', 'text', ...
                            'Parent', fig, ...
                            'Position', [10, 490, 680, 50], ...
-                           'String', 'Status: Connected. Use WASD/Arrow keys.', ...
+                           'String', 'Status: Connected. Use WASD/Arrow/QE keys.', ...
                            'FontSize', 10, ...
                            'HorizontalAlignment', 'center', ...
                            'BackgroundColor', [0 0 0]);
@@ -65,7 +59,7 @@ function unity_control()
     lastFrameTime = tic;
     
     % Display initial message
-    text(ax, 0.5, 0.5, 'Waiting for Unity frames...', ...
+    text(ax, 0.5, 0.5, 'Waiting for Simulation Engine...', ...
          'HorizontalAlignment', 'center', ...
          'VerticalAlignment', 'middle', ...
          'FontSize', 14, ...
@@ -91,6 +85,10 @@ function unity_control()
                     write(commandClient, uint8('S'));
                 case {'d', 'rightarrow'}
                     write(commandClient, uint8('D'));
+                case 'q'
+                    write(commandClient, uint8('Q'));
+                case 'e'
+                    write(commandClient, uint8('E'));
                 otherwise
                     set(statusText, 'String', sprintf('Status: Key %s ignored', key), ...
                                     'BackgroundColor', [0 0 0]);
@@ -111,7 +109,7 @@ function unity_control()
             lastKey = '';
         end
         
-        set(statusText, 'String', 'Status: Ready - Use WASD/Arrow keys', ...
+        set(statusText, 'String', 'Status: Ready - Use WASD/Arrow/QE keys', ...
                         'BackgroundColor', [0 0 0]);
     end
     
@@ -135,14 +133,10 @@ function unity_control()
         elapsedTime = toc(startTime);
         if elapsedTime > 0 && frameCount > 0
            fprintf('\n=== Session Ended ===\n');
-           % fprintf('Total frames received: %d\n', frameCount);
-            %fprintf('Frames skipped: %d\n', skippedFrames);
-            %%fprintf('Session duration: %.2f seconds\n', elapsedTime);
-            %fprintf('Average FPS: %.2f\n', frameCount / elapsedTime);
             fprintf('========================\n');
         end
         
-        disp('Unity control stopped.');
+        disp('Simulation stopped.');
     end
     
     set(fig, 'CloseRequestFcn', @closeRequest);
@@ -153,9 +147,11 @@ function unity_control()
     fprintf('A / Left  : Left\n');
     fprintf('S / Down  : Backward\n');
     fprintf('D / Right : Right\n');
+    fprintf('Q         : Rotate Left\n');
+    fprintf('E         : Rotate Right\n');
     fprintf('============================\n\n');
     
-    disp('Ready. Click window and use WASD/arrows.');
+    disp('Ready. Click window and use WASD/arrows/QE.');
     
     % OPTIMIZATION: Pre-allocate buffer for frame size reading
     frameSizeBuffer = zeros(1, 4, 'uint8');
@@ -164,7 +160,6 @@ function unity_control()
     while isRunning && isvalid(fig)
         try
             % OPTIMIZATION: Skip frames if we're behind
-            % Only process the latest available frame
             availableBytes = frameClient.NumBytesAvailable;
             
             if availableBytes >= 4
@@ -174,7 +169,6 @@ function unity_control()
                 
                 % Try to estimate number of complete frames in buffer
                 while tempAvailable >= 4
-                    % We can't peek without reading, so just process what we have
                     break;
                 end
                 
@@ -185,7 +179,6 @@ function unity_control()
                 % Validate
                 if frameSize <= 0 || frameSize > 10e6
                     disp(['Invalid frame size: ' num2str(frameSize)]);
-                    % Try to clear buffer
                     if frameClient.NumBytesAvailable > 0
                         flush(frameClient);
                     end
@@ -193,20 +186,18 @@ function unity_control()
                 end
                 
                 % OPTIMIZATION: Check if there are more frames waiting
-                % If so, skip this one and go to the next
                 if frameClient.NumBytesAvailable > frameSize + 4
-                    % Another frame is already waiting, skip this old one
                     if frameClient.NumBytesAvailable >= frameSize
                         discard = read(frameClient, frameSize, 'uint8'); %#ok<NASGU>
                         skippedFrames = skippedFrames + 1;
-                        continue;  % Go to next frame immediately
+                        continue;
                     end
                 end
                 
                 % Wait for this frame with timeout
                 timeout = tic;
                 while frameClient.NumBytesAvailable < frameSize && isRunning
-                    if toc(timeout) > 1.0  % 1 second timeout
+                    if toc(timeout) > 1.0
                         error('Frame reception timeout');
                     end
                     pause(0.001);
@@ -232,6 +223,9 @@ function unity_control()
                             pixelData = reshape(typecast(img.getData().getDataStorage(), 'uint8'), [3, w, h]);
                             img_matlab = permute(pixelData, [3 2 1]);
                             
+                            % FIX RED-BLUE SHIFT: Convert BGR to RGB
+                            img_matlab = img_matlab(:, :, [3 2 1]);
+                            
                             % Display
                             if isempty(imgHandle) || ~isvalid(imgHandle)
                                 imgHandle = imshow(img_matlab, 'Parent', ax);
@@ -245,15 +239,7 @@ function unity_control()
                             frameCount = frameCount + 1;
                             frameTime = toc(lastFrameTime);
                             lastFrameTime = tic;
-                            
-                            %if frameCount > 1
-                                %currentFPS = 1 / frameTime;
-                                %latencyMs = frameTime * 1000;
-                                %set(statusText, 'String', sprintf('Frames: %d | Skipped: %d | FPS: %.1f | Latency: %.0fms', ...
-                                  %  frameCount, skippedFrames, currentFPS, latencyMs), ...
-                                   % 'BackgroundColor', [0.9 0.95 0.95]);
-                            %end
-                            
+           
                             drawnow limitrate;
                         end
                         
@@ -284,7 +270,7 @@ function unity_control()
                 end
             else
                 % No data, brief pause
-                pause(0.005);  % Shorter pause for more responsiveness
+                pause(0.005);
             end
             
         catch e
@@ -301,5 +287,5 @@ function unity_control()
     catch
     end
     
-    disp('Unity control session ended.');
+    disp('Simulation session ended.');
 end

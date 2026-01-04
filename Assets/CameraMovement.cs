@@ -3,6 +3,7 @@ using UnityEngine;
 public class CameraMovement : MonoBehaviour
 {
     public float speed = 6f;
+    public float rotationSpeed = 100f;
     public float fixedHeight = 1.7f;
 
     void Start()
@@ -30,5 +31,15 @@ public class CameraMovement : MonoBehaviour
 
         // Apply new position
         transform.position = newPos;
+
+        // Q/E Rotation
+        if (Input.GetKey(KeyCode.Q))
+        {
+            transform.Rotate(0, -rotationSpeed * Time.deltaTime, 0);
+        }
+        if (Input.GetKey(KeyCode.E))
+        {
+            transform.Rotate(0, rotationSpeed * Time.deltaTime, 0);
+        }
     }
 }

@@ -21,7 +21,10 @@ public class TCPReceiver : MonoBehaviour
     bool newData = false;
     
     Vector3 moveInput = Vector3.zero;
+    float rotationInput = 0f;
     public float speed = 5f;
+    public float rotationSpeed = 90f;
+    public float fixedHeight = 1.7f;
     CharacterController controller;
     
     // Frame streaming - OPTIMIZED
@@ -30,7 +33,7 @@ public class TCPReceiver : MonoBehaviour
     public int frameWidth = 640;
     public int frameHeight = 480;
     public int targetFPS = 60;
-    public int jpegQuality = 100;  // REDUCED quality for faster encoding
+    public int jpegQuality = 100;
     float frameInterval;
     float lastFrameTime;
     
@@ -46,6 +49,11 @@ public class TCPReceiver : MonoBehaviour
     void Start()
     {
         controller = GetComponent<CharacterController>();
+        
+        // Set initial height
+        Vector3 pos = transform.position;
+        pos.y = fixedHeight;
+        transform.position = pos;
         
         if (renderCamera == null)
             renderCamera = Camera.main;
@@ -103,6 +111,7 @@ public class TCPReceiver : MonoBehaviour
                         {
                             receivedData = Encoding.ASCII.GetString(bytes, 0, length);
                             newData = true;
+                            Debug.Log("Received command: " + receivedData);
                         }
                     }
                 }
@@ -127,8 +136,8 @@ public class TCPReceiver : MonoBehaviour
                 frameClient = frameListener.AcceptTcpClient();
                 
                 // OPTIMIZATION: Configure TCP for low latency
-                frameClient.NoDelay = true;  // Disable Nagle's algorithm
-                frameClient.SendBufferSize = 65536;  // Smaller send buffer
+                frameClient.NoDelay = true;
+                frameClient.SendBufferSize = 65536;
                 
                 frameStream = frameClient.GetStream();
                 isFrameClientConnected = true;
@@ -162,7 +171,7 @@ public class TCPReceiver : MonoBehaviour
                         }
                         else
                         {
-                            Thread.Sleep(5);  // Shorter sleep for more responsive updates
+                            Thread.Sleep(5);
                         }
                     }
                 }
@@ -192,7 +201,22 @@ public class TCPReceiver : MonoBehaviour
             newData = false;
         }
         
-        controller.Move(moveInput * speed * Time.deltaTime);
+        // Apply movement
+        Vector3 movement = moveInput * speed * Time.deltaTime;
+        controller.Move(movement);
+        
+        // Maintain fixed height
+        Vector3 pos = transform.position;
+        pos.y = fixedHeight;
+        transform.position = pos;
+        
+        // Apply rotation around Y axis only
+        if (rotationInput != 0)
+        {
+            float rotationAmount = rotationInput * rotationSpeed * Time.deltaTime;
+            transform.Rotate(0, rotationAmount, 0, Space.World);
+            Debug.Log("Rotating: " + rotationAmount + " degrees");
+        }
         
         // Capture frames at target FPS
         if (Time.time - lastFrameTime >= frameInterval)
@@ -239,22 +263,48 @@ public class TCPReceiver : MonoBehaviour
 
     void ParseCommand(string command)
     {
-        switch (command.Trim())
+        string cmd = command.Trim();
+        Debug.Log("Parsing command: [" + cmd + "]");
+        
+        switch (cmd)
         {
             case "W":
-                moveInput = Vector3.right;
+                moveInput = transform.forward;
+                rotationInput = 0f;
+                Debug.Log("Command: Forward");
                 break;
             case "A":
-                moveInput = Vector3.forward;
+                moveInput = -transform.right;
+                rotationInput = 0f;
+                Debug.Log("Command: Left");
                 break;
             case "S":
-                moveInput = Vector3.left;
+                moveInput = -transform.forward;
+                rotationInput = 0f;
+                Debug.Log("Command: Backward");
                 break;
             case "D":
-                moveInput = Vector3.back;
+                moveInput = transform.right;
+                rotationInput = 0f;
+                Debug.Log("Command: Right");
+                break;
+            case "Q":
+                moveInput = Vector3.zero;
+                rotationInput = -1f;
+                Debug.Log("Command: Rotate Left");
+                break;
+            case "E":
+                moveInput = Vector3.zero;
+                rotationInput = 1f;
+                Debug.Log("Command: Rotate Right");
                 break;
             case "STOP":
                 moveInput = Vector3.zero;
+                rotationInput = 0f;
+                Debug.Log("Command: Stop");
+                break;
+            default:
+                Debug.Log("Unknown command: " + cmd);
                 break;
         }
     }
