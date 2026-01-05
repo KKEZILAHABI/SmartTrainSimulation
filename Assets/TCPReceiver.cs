@@ -22,10 +22,15 @@ public class TCPReceiver : MonoBehaviour
     
     Vector3 moveInput = Vector3.zero;
     float rotationInput = 0f;
+    float pitchInput = 0f;
     public float speed = 5f;
     public float rotationSpeed = 90f;
+    public float pitchSpeed = 60f;
     public float fixedHeight = 1.7f;
+    public float minPitch = -80f;
+    public float maxPitch = 80f;
     CharacterController controller;
+    float currentPitch = 0f;
     
     // Frame streaming - OPTIMIZED
     RenderTexture renderTexture;
@@ -49,11 +54,6 @@ public class TCPReceiver : MonoBehaviour
     void Start()
     {
         controller = GetComponent<CharacterController>();
-        
-        // Set initial height
-        Vector3 pos = transform.position;
-        pos.y = fixedHeight;
-        transform.position = pos;
         
         if (renderCamera == null)
             renderCamera = Camera.main;
@@ -205,17 +205,29 @@ public class TCPReceiver : MonoBehaviour
         Vector3 movement = moveInput * speed * Time.deltaTime;
         controller.Move(movement);
         
-        // Maintain fixed height
-        Vector3 pos = transform.position;
-        pos.y = fixedHeight;
-        transform.position = pos;
-        
         // Apply rotation around Y axis only
         if (rotationInput != 0)
         {
             float rotationAmount = rotationInput * rotationSpeed * Time.deltaTime;
             transform.Rotate(0, rotationAmount, 0, Space.World);
             Debug.Log("Rotating: " + rotationAmount + " degrees");
+        }
+        
+        // Apply pitch (look up/down) - only rotate the camera, not the character
+        if (pitchInput != 0)
+        {
+            float pitchAmount = pitchInput * pitchSpeed * Time.deltaTime;
+            currentPitch = Mathf.Clamp(currentPitch + pitchAmount, minPitch, maxPitch);
+            Debug.Log("Pitch: " + currentPitch + " degrees");
+        }
+        
+        // Always apply camera rotation: preserve parent's Y rotation, apply pitch on X
+        if (renderCamera != null)
+        {
+            // Get the parent's (character's) Y rotation
+            float yRotation = transform.eulerAngles.y;
+            // Apply pitch to camera while maintaining character's yaw
+            renderCamera.transform.rotation = Quaternion.Euler(currentPitch, yRotation, 0);
         }
         
         // Capture frames at target FPS
@@ -271,36 +283,55 @@ public class TCPReceiver : MonoBehaviour
             case "W":
                 moveInput = transform.forward;
                 rotationInput = 0f;
+                pitchInput = 0f;
                 Debug.Log("Command: Forward");
                 break;
             case "A":
                 moveInput = -transform.right;
                 rotationInput = 0f;
+                pitchInput = 0f;
                 Debug.Log("Command: Left");
                 break;
             case "S":
                 moveInput = -transform.forward;
                 rotationInput = 0f;
+                pitchInput = 0f;
                 Debug.Log("Command: Backward");
                 break;
             case "D":
                 moveInput = transform.right;
                 rotationInput = 0f;
+                pitchInput = 0f;
                 Debug.Log("Command: Right");
                 break;
             case "Q":
                 moveInput = Vector3.zero;
                 rotationInput = -1f;
+                pitchInput = 0f;
                 Debug.Log("Command: Rotate Left");
                 break;
             case "E":
                 moveInput = Vector3.zero;
                 rotationInput = 1f;
+                pitchInput = 0f;
                 Debug.Log("Command: Rotate Right");
+                break;
+            case "Z":
+                moveInput = Vector3.zero;
+                rotationInput = 0f;
+                pitchInput = 1f;
+                Debug.Log("Command: Look Down");
+                break;
+            case "3":
+                moveInput = Vector3.zero;
+                rotationInput = 0f;
+                pitchInput = -1f;
+                Debug.Log("Command: Look Up");
                 break;
             case "STOP":
                 moveInput = Vector3.zero;
                 rotationInput = 0f;
+                pitchInput = 0f;
                 Debug.Log("Command: Stop");
                 break;
             default:

@@ -45,7 +45,7 @@ function sim_control()
     statusText = uicontrol('Style', 'text', ...
                            'Parent', fig, ...
                            'Position', [10, 490, 680, 50], ...
-                           'String', 'Status: Connected. Use WASD/Arrow/QE keys.', ...
+                           'String', 'Status: Connected. Use WASD/Arrow/QE/3Z keys.', ...
                            'FontSize', 10, ...
                            'HorizontalAlignment', 'center', ...
                            'BackgroundColor', [0 0 0]);
@@ -89,6 +89,10 @@ function sim_control()
                     write(commandClient, uint8('Q'));
                 case 'e'
                     write(commandClient, uint8('E'));
+                case '3'
+                    write(commandClient, uint8('3'));
+                case 'z'
+                    write(commandClient, uint8('Z'));
                 otherwise
                     set(statusText, 'String', sprintf('Status: Key %s ignored', key), ...
                                     'BackgroundColor', [0 0 0]);
@@ -109,7 +113,7 @@ function sim_control()
             lastKey = '';
         end
         
-        set(statusText, 'String', 'Status: Ready - Use WASD/Arrow/QE keys', ...
+        set(statusText, 'String', 'Status: Ready - Use WASD/Arrow/QE/3Z keys', ...
                         'BackgroundColor', [0 0 0]);
     end
     
@@ -149,9 +153,11 @@ function sim_control()
     fprintf('D / Right : Right\n');
     fprintf('Q         : Rotate Left\n');
     fprintf('E         : Rotate Right\n');
+    fprintf('3         : Look Up\n');
+    fprintf('Z         : Look Down\n');
     fprintf('============================\n\n');
     
-    disp('Ready. Click window and use WASD/arrows/QE.');
+    disp('Ready. Click window and use WASD/arrows/QE/3Z.');
     
     % OPTIMIZATION: Pre-allocate buffer for frame size reading
     frameSizeBuffer = zeros(1, 4, 'uint8');
