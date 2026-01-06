@@ -14,13 +14,16 @@ function sim_control()
     try
         commandClient = tcpclient('127.0.0.1', 5000, 'Timeout', 5);
         frameClient = tcpclient('127.0.0.1', 5001, 'Timeout', 5);
+        statusClient = tcpclient('127.0.0.1', 5002, 'Timeout', 5); % NEW: Status port
         
         % OPTIMIZATION: Configure TCP for low latency
         configureCallback(frameClient, "off");
+        configureCallback(statusClient, "off");
         
         disp('Connected to Simulation servers.');
         disp('  Command port: 5000');
         disp('  Output port: 5001');
+        disp('  Status port: 5002');
     catch e
         error('Failed to connect to Simulation Server. Ensure Unity is running.\nError: %s', e.message);
     end
@@ -53,6 +56,7 @@ function sim_control()
     imgHandle = [];
     lastKey = '';
     isRunning = true;
+    simulationEnded = false;
     frameCount = 0;
     skippedFrames = 0;
     startTime = tic;
@@ -127,7 +131,7 @@ function sim_control()
         end
         
         try
-            clear commandClient frameClient;
+            clear commandClient frameClient statusClient;
         catch
         end
         
@@ -165,6 +169,23 @@ function sim_control()
     % Main loop - OPTIMIZED for low latency
     while isRunning && isvalid(fig)
         try
+            % NEW: Check for simulation end status
+            if statusClient.NumBytesAvailable > 0
+                statusData = char(read(statusClient, statusClient.NumBytesAvailable, 'uint8'));
+                
+                if contains(statusData, 'SIMULATION_ENDED')
+                    simulationEnded = true;
+                    isRunning = false;
+                    
+                    % Parse success/failure
+                    simulationSuccess = contains(statusData, 'SUCCESS');
+                    
+                    % Show end dialog
+                    showSimulationEndDialog(simulationSuccess);
+                    break;
+                end
+            end
+            
             % OPTIMIZATION: Skip frames if we're behind
             availableBytes = frameClient.NumBytesAvailable;
             
@@ -289,9 +310,105 @@ function sim_control()
     
     % Cleanup
     try
-        clear commandClient frameClient;
+        clear commandClient frameClient statusClient;
     catch
     end
     
     disp('Simulation session ended.');
+    
+    % NEW: Show end dialog function
+    function showSimulationEndDialog(success)
+        % Don't close main window yet - keep connections alive
+        set(fig, 'Visible', 'off');
+        
+        % Create dialog figure
+        dialogFig = figure('Position', [300, 250, 500, 300], ...
+                          'Name', 'Simulation Complete', ...
+                          'NumberTitle', 'off', ...
+                          'MenuBar', 'none', ...
+                          'ToolBar', 'none', ...
+                          'Resize', 'off', ...
+                          'WindowStyle', 'modal');
+        
+        % Set background color
+        set(dialogFig, 'Color', [0.95 0.95 0.95]);
+        
+        % Result icon and message
+        if success
+            iconColor = [0.2 0.8 0.2];
+            statusMsg = 'SUCCESS';
+            detailMsg = 'The train simulation completed successfully!';
+            iconSymbol = '✓';
+        else
+            iconColor = [0.9 0.2 0.2];
+            statusMsg = 'FAILURE';
+            detailMsg = 'The train simulation encountered an issue.';
+            iconSymbol = '✗';
+        end
+        
+        % Icon panel
+        iconPanel = uipanel('Parent', dialogFig, ...
+                           'Position', [0.1, 0.55, 0.8, 0.35], ...
+                           'BackgroundColor', iconColor, ...
+                           'BorderType', 'none');
+        
+        % Icon text
+        uicontrol('Style', 'text', ...
+                 'Parent', iconPanel, ...
+                 'Position', [10, 60, 380, 40], ...
+                 'String', iconSymbol, ...
+                 'FontSize', 48, ...
+                 'FontWeight', 'bold', ...
+                 'ForegroundColor', [1 1 1], ...
+                 'BackgroundColor', iconColor, ...
+                 'HorizontalAlignment', 'center');
+        
+        % Status text
+        uicontrol('Style', 'text', ...
+                 'Parent', iconPanel, ...
+                 'Position', [10, 20, 380, 35], ...
+                 'String', ['SIMULATION ' statusMsg], ...
+                 'FontSize', 16, ...
+                 'FontWeight', 'bold', ...
+                 'ForegroundColor', [1 1 1], ...
+                 'BackgroundColor', iconColor, ...
+                 'HorizontalAlignment', 'center');
+        
+        % Detail message
+        uicontrol('Style', 'text', ...
+                 'Parent', dialogFig, ...
+                 'Position', [50, 130, 400, 30], ...
+                 'String', detailMsg, ...
+                 'FontSize', 11, ...
+                 'BackgroundColor', [0.95 0.95 0.95], ...
+                 'HorizontalAlignment', 'center');
+        
+        % Exit button (centered)
+        uicontrol('Style', 'pushbutton', ...
+                 'Parent', dialogFig, ...
+                 'Position', [175, 40, 150, 50], ...
+                 'String', 'Exit Simulation', ...
+                 'FontSize', 11, ...
+                 'FontWeight', 'bold', ...
+                 'BackgroundColor', [0.7 0.7 0.7], ...
+                 'ForegroundColor', [0.2 0.2 0.2], ...
+                 'Callback', @exitCallback);
+        
+        % Exit callback function
+        function exitCallback(~, ~)
+            delete(dialogFig);
+            
+            % Close the hidden main window and connections
+            if isvalid(fig)
+                delete(fig);
+            end
+            
+            try
+                clear commandClient frameClient statusClient;
+            catch
+            end
+            
+            disp('Exiting simulation.');
+        end
+    end
 end

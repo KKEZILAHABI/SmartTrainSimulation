@@ -10,11 +10,14 @@ public class TCPReceiver : MonoBehaviour
 {
     Thread receiveThread;
     Thread sendThread;
+    Thread statusThread;
     TcpListener commandListener;
     TcpListener frameListener;
+    TcpListener statusListener;
     
     public int commandPort = 5000;
     public int framePort = 5001;
+    public int statusPort = 5002;
     public Camera renderCamera;
     
     string receivedData = "";
@@ -45,6 +48,13 @@ public class TCPReceiver : MonoBehaviour
     TcpClient frameClient;
     NetworkStream frameStream;
     bool isFrameClientConnected = false;
+    
+    // Status streaming
+    TcpClient statusClient;
+    NetworkStream statusStream;
+    bool isStatusClientConnected = false;
+    Queue<string> statusMessages = new Queue<string>();
+    object statusLock = new object();
     
     // OPTIMIZATION: Only keep the latest frame
     byte[] latestFrame = null;
@@ -86,6 +96,10 @@ public class TCPReceiver : MonoBehaviour
         sendThread = new Thread(new ThreadStart(SendFrames));
         sendThread.IsBackground = true;
         sendThread.Start();
+        
+        statusThread = new Thread(new ThreadStart(HandleStatusConnection));
+        statusThread.IsBackground = true;
+        statusThread.Start();
     }
 
     void ListenForCommands()
@@ -191,6 +205,91 @@ public class TCPReceiver : MonoBehaviour
         {
             Debug.Log("Frame listener error: " + e.ToString());
         }
+    }
+
+    void HandleStatusConnection()
+    {
+        try
+        {
+            statusListener = new TcpListener(IPAddress.Any, statusPort);
+            statusListener.Start();
+            Debug.Log("Status listener started on port " + statusPort);
+            
+            while (true)
+            {
+                statusClient = statusListener.AcceptTcpClient();
+                statusClient.NoDelay = true;
+                statusStream = statusClient.GetStream();
+                isStatusClientConnected = true;
+                Debug.Log("MATLAB connected for status updates");
+                
+                try
+                {
+                    while (statusClient.Connected && isStatusClientConnected)
+                    {
+                        string message = null;
+                        
+                        lock (statusLock)
+                        {
+                            if (statusMessages.Count > 0)
+                            {
+                                message = statusMessages.Dequeue();
+                            }
+                        }
+                        
+                        if (message != null)
+                        {
+                            byte[] data = Encoding.UTF8.GetBytes(message);
+                            statusStream.Write(data, 0, data.Length);
+                            statusStream.Flush();
+                            Debug.Log("Sent status to MATLAB: " + message);
+                        }
+                        else
+                        {
+                            Thread.Sleep(50);
+                        }
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Debug.Log("Status streaming error: " + e.ToString());
+                }
+                finally
+                {
+                    isStatusClientConnected = false;
+                    if (statusStream != null) statusStream.Close();
+                    if (statusClient != null) statusClient.Close();
+                }
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.Log("Status listener error: " + e.ToString());
+        }
+    }
+
+    // PUBLIC METHOD: Send status message to MATLAB
+    public void SendStatusToMatlab(string statusMessage)
+    {
+        if (!isStatusClientConnected)
+        {
+            Debug.LogWarning("Status client not connected - cannot send: " + statusMessage);
+            return;
+        }
+        
+        lock (statusLock)
+        {
+            statusMessages.Enqueue(statusMessage);
+        }
+        
+        Debug.Log("Queued status message: " + statusMessage);
+    }
+
+    // PUBLIC METHOD: Notify simulation end
+    public void NotifySimulationEnd(bool success)
+    {
+        string message = success ? "SIMULATION_ENDED:SUCCESS" : "SIMULATION_ENDED:FAILURE";
+        SendStatusToMatlab(message);
     }
 
     void Update()
@@ -343,6 +442,7 @@ public class TCPReceiver : MonoBehaviour
     void OnApplicationQuit()
     {
         isFrameClientConnected = false;
+        isStatusClientConnected = false;
         
         if (renderCamera != null)
         {
@@ -353,15 +453,23 @@ public class TCPReceiver : MonoBehaviour
             receiveThread.Abort();
         if (sendThread != null && sendThread.IsAlive)
             sendThread.Abort();
+        if (statusThread != null && statusThread.IsAlive)
+            statusThread.Abort();
             
         if (commandListener != null)
             commandListener.Stop();
         if (frameListener != null)
             frameListener.Stop();
+        if (statusListener != null)
+            statusListener.Stop();
         if (frameStream != null)
             frameStream.Close();
         if (frameClient != null)
             frameClient.Close();
+        if (statusStream != null)
+            statusStream.Close();
+        if (statusClient != null)
+            statusClient.Close();
             
         if (renderTexture != null)
             renderTexture.Release();
