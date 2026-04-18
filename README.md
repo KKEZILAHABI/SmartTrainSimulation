@@ -6,17 +6,17 @@ This README explains how to install the correct Unity version, set up the repo, 
 
 ---
 
-## 📌 Project Info
+##  Project Info
 
 - **Unity:** 2022.3.62f3 LTS (everyone must use this version)
 - **Source Control:** Git + Git LFS
 - **Team Size:** 5
 
-> ❗ Do NOT upgrade Unity unless the whole team agrees.
+>  Do NOT upgrade Unity unless the whole team agrees.
 
 ---
 
-# 🟢 1. Install Unity 2022.3.62f3 LTS
+#  1. Install Unity 2022.3.62f3 LTS
 
 ### Step 1 — Install Unity Hub
 Download and install:
@@ -42,7 +42,7 @@ Sign in (or create) a Unity account.
 
 ---
 
-# 🔧 2. Git & Git LFS (everyone)
+#  2. Git & Git LFS (everyone)
 
 ### Install Git(Kama huna)
 ```bash
@@ -59,9 +59,9 @@ Then run:
 git lfs install
 ```
 ---
-# 🚀 3. FIRST-TIME SETUP (When you clone the project)
+#  3. FIRST-TIME SETUP (When you clone the project)
 
-### 1️⃣ Clone
+### 1 Clone
 
 Use VSCode GUI or
 
@@ -70,11 +70,11 @@ git clone https://github.com/KKEZILAHABI/SmartTrainSimulation
 
 cd SmartTrainSimulation
 ```
-### 2️⃣ Verify LFS is active
+### 2 Verify LFS is active
 ```bash
 git lfs env
 ```
-### 3️⃣ Open project in Unity
+### 3 Open project in Unity
  - Open Unity Hub
  - Click Open
  - Select the project folder
@@ -84,19 +84,19 @@ git lfs env
 
 # 4. WORKFLOW
 
-### ✅ A) What to do on EVERY new work session (subsequent pulls)
+###  A) What to do on EVERY new work session (subsequent pulls)
 
 - Pull → Open → Work → Test → Commit small → Push
 
 ---
 
-### ✍️ B) While working
+###  B) While working
 
 - Keep commits small and clear:
 
 ---
 
-# 🚫 5. Do NOT Commit
+#  5. Do NOT Commit
 
 Already ignored by .gitignore, but remember:
 
@@ -109,19 +109,19 @@ Already ignored by .gitignore, but remember:
 
 And:
 
-❌ No builds
-❌ No temporary exports
-❌ No personal Unity config
+ No builds
+ No temporary exports
+ No personal Unity config
 
 ---
 
-# 🔒 6. Team Rules
+#  6. Team Rules
 
-❗ Avoid two people editing the scene at a time
-- ✔️ Use prefabs for shared objects
-- ✔️ Pull before starting work
-- ✔️ Test before pushing
-- ❌ Don’t change Unity version alone
-- 💬 Communicate big changes early
+ Avoid two people editing the scene at a time
+-  Use prefabs for shared objects
+-  Pull before starting work
+-  Test before pushing
+-  Don’t change Unity version alone
+-  Communicate big changes early
 
 ---
